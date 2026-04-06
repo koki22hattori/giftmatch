@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 
 const SUPABASE_URL = 'https://lzwhfwyqqpeitxdmbnld.supabase.co'
-const SUPABASE_SERVICE_ROLE_KEY = 'sb_secret_XzRze2bP6dadem6GkOHOwQ_d8gojyTF'
+const SUPABASE_SERVICE_ROLE_KEY = 'SUPABASE_SECRET_REMOVED'
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
