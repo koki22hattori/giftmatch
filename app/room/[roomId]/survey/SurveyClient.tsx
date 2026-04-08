@@ -285,6 +285,8 @@ function SurveyForm({
     try {
       const supabase = createClient()
 
+      console.log('[Survey] updating playerName:', playerName, 'roomId:', roomId)
+
       // answers を保存
       const { data, error } = await supabase
         .from('players')
@@ -303,7 +305,10 @@ function SurveyForm({
       console.log('[Survey] update result:', data, error)
       if (error) {
         console.error('[Survey] update failed:', error)
-        throw error
+        alert(`[デバッグ] update失敗:\ncode: ${error.code}\nmessage: ${error.message}\ndetails: ${error.details}`)
+        setError(`送信に失敗しました: ${error.message}`)
+        setIsSubmitting(false)
+        return
       }
 
       // 全員回答済みなら phase 3 へ自動進行
@@ -328,7 +333,10 @@ function SurveyForm({
         .eq('room_id', roomId)
       onSubmitted((updatedPlayers ?? []) as { name: string; answers: SurveyAnswers | null }[])
     } catch (e) {
-      setError('送信に失敗しました。もう一度お試しください。')
+      console.error('[Survey] handleSubmit threw:', e)
+      const msg = e instanceof Error ? e.message : String(e)
+      alert(`[デバッグ] 予期しないエラー:\n${msg}`)
+      setError(`送信に失敗しました: ${msg}`)
       setIsSubmitting(false)
     }
   }
