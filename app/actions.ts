@@ -17,6 +17,19 @@ const ANONYMOUS_NAMES = [
 export async function createRoom() {
   const supabase = createClient()
 
+  // 未終了のroomが既にあればそこへリダイレクト（新規作成しない）
+  const { data: existing } = await supabase
+    .from('rooms')
+    .select('id')
+    .lt('phase', 10)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (existing) {
+    redirect(`/room/${existing.id}/auth`)
+  }
+
   const { data: room, error } = await supabase
     .from('rooms')
     .insert({ phase: 1 })
@@ -46,13 +59,19 @@ export async function authenticatePlayer(roomId: string, playerName: string) {
   const available = ANONYMOUS_NAMES.filter((n) => !taken.has(n))
   const anonymousName = available[Math.floor(Math.random() * available.length)]
 
-  const { error } = await supabase
+  console.log('[Auth] updating playerName:', playerName, 'roomId:', roomId, 'anonymousName:', anonymousName)
+
+  const { data, error } = await supabase
     .from('players')
     .update({ authenticated: true, anonymous_name: anonymousName })
     .eq('room_id', roomId)
     .eq('name', playerName)
 
-  if (error) throw new Error('認証に失敗しました')
+  console.log('[Auth] update result:', data, error)
+  if (error) {
+    console.error('[Auth] update failed:', error)
+    throw new Error('認証に失敗しました')
+  }
 }
 
 export type SurveyAnswers = {
