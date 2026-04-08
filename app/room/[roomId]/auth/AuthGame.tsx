@@ -4,7 +4,16 @@ import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { TREE } from '@/lib/authTree'
 import type { ResultNode } from '@/lib/authTree'
-import { authenticatePlayer } from '@/app/actions'
+import { createClient } from '@/lib/supabase/client'
+
+const ANONYMOUS_NAMES = [
+  'ケンケン',
+  '親指',
+  'まみさ',
+  '鳥羽高のクロコダイル',
+  'とぅーしゃんしん',
+  '金盗まれてたタバコ屋のおばちゃん',
+]
 
 // ---- Animated number hook ----
 function useAnimatedNumber(target: number): number {
@@ -379,7 +388,33 @@ export function AuthGame({ roomId }: { roomId: string }) {
     if (!result) return
     localStorage.setItem(`giftmatch_player_${roomId}`, result.player)
     setPhase('challenger')
-    void authenticatePlayer(roomId, result.player)
+    ;(async () => {
+      try {
+        const supabase = createClient()
+        const { data: existing } = await supabase
+          .from('players')
+          .select('anonymous_name')
+          .eq('room_id', roomId)
+          .not('anonymous_name', 'is', null)
+        const taken = new Set(existing?.map((p) => p.anonymous_name) ?? [])
+        const available = ANONYMOUS_NAMES.filter((n) => !taken.has(n))
+        const anonymousName = available[Math.floor(Math.random() * available.length)]
+        console.log('[Auth] updating playerName:', result.player, 'roomId:', roomId, 'anonymousName:', anonymousName)
+        const { data, error } = await supabase
+          .from('players')
+          .update({ authenticated: true, anonymous_name: anonymousName })
+          .eq('room_id', roomId)
+          .eq('name', result.player)
+        console.log('[Auth] update result:', data, error)
+        if (error) {
+          console.error('[Auth] update failed:', error)
+          alert(`[デバッグ] 認証DB更新失敗:\ncode: ${error.code}\nmessage: ${error.message}`)
+        }
+      } catch (e) {
+        console.error('[Auth] authenticatePlayer failed:', e)
+        alert(`[デバッグ] 認証DB更新失敗:\n${e instanceof Error ? e.message : String(e)}`)
+      }
+    })()
   }
 
   if (phase === 'revealed' && result) {
