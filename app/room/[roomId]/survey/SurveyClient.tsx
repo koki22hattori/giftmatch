@@ -172,7 +172,9 @@ function WaitingRoom({
           }
         }
       )
-      .subscribe()
+      .subscribe((status) => {
+        console.log('Realtime status:', status)
+      })
 
     return () => { supabase.removeChannel(channel) }
   }, [roomId, router])
