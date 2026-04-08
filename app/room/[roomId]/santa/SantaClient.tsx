@@ -97,11 +97,15 @@ export function SantaClient({
   useEffect(() => {
     if (phase !== 'waiting') return
 
+    const supabase = createClient()
+
     async function refresh() {
+      console.log('[Realtime] refresh() called, fetching players...')
       const [{ data: room }, { data: players }] = await Promise.all([
         supabase.from('rooms').select('phase').eq('id', roomId).single(),
         supabase.from('players').select('name, anonymous_name, santa_target, post_answers').eq('room_id', roomId),
       ])
+      console.log('[Realtime] players fetched:', players)
       const updated = (players ?? []).map((p) => ({
         name: p.name as string,
         anonymousName: (p.anonymous_name ?? p.name) as string,
@@ -117,24 +121,30 @@ export function SantaClient({
 
     refresh()
 
-    const supabase = createClient()
+    console.log('[Realtime] channel created')
     const channel = supabase
       .channel(`santa-waiting-${roomId}`)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'players', filter: `room_id=eq.${roomId}` },
-        () => refresh()
+        (payload) => {
+          console.log('[Realtime] event received:', payload)
+          refresh()
+        }
       )
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `id=eq.${roomId}` },
         (payload) => {
+          console.log('[Realtime] event received:', payload)
           if ((payload.new as { phase: number }).phase >= 8) {
             router.push(`/room/${roomId}/gift`)
           }
         }
       )
-      .subscribe()
+      .subscribe((status) => {
+        console.log('[Realtime] status:', status)
+      })
 
     return () => { supabase.removeChannel(channel) }
   }, [phase, roomId, router])

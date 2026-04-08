@@ -276,11 +276,15 @@ export function GameClient({ roomId }: { roomId: string }) {
   useEffect(() => {
     if (gamePhase !== 'waiting') return
 
+    const supabase = createClient()
+
     async function refresh() {
+      console.log('[Realtime] refresh() called, fetching players...')
       const [{ data: room }, { data: players }] = await Promise.all([
         supabase.from('rooms').select('phase').eq('id', roomId).single(),
         supabase.from('players').select('name, game_score, anonymous_name').eq('room_id', roomId),
       ])
+      console.log('[Realtime] players fetched:', players)
       setWaitPlayers((players ?? []) as Array<{ name: string; game_score: number | null; anonymous_name: string | null }>)
       if ((room?.phase ?? 5) >= 6) {
         router.push(`/room/${roomId}/reveal`)
@@ -289,24 +293,30 @@ export function GameClient({ roomId }: { roomId: string }) {
 
     refresh()
 
-    const supabase = createClient()
+    console.log('[Realtime] channel created')
     const channel = supabase
       .channel(`game-waiting-${roomId}`)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'players', filter: `room_id=eq.${roomId}` },
-        () => refresh()
+        (payload) => {
+          console.log('[Realtime] event received:', payload)
+          refresh()
+        }
       )
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `id=eq.${roomId}` },
         (payload) => {
+          console.log('[Realtime] event received:', payload)
           if ((payload.new as { phase: number }).phase >= 6) {
             router.push(`/room/${roomId}/reveal`)
           }
         }
       )
-      .subscribe()
+      .subscribe((status) => {
+        console.log('[Realtime] status:', status)
+      })
 
     return () => { supabase.removeChannel(channel) }
   }, [gamePhase, roomId, router])

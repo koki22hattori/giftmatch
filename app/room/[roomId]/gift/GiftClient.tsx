@@ -23,11 +23,15 @@ export function GiftClient({ roomId }: { roomId: string }) {
   useEffect(() => {
     if (!done) return
 
+    const supabase = createClient()
+
     async function refresh() {
+      console.log('[Realtime] refresh() called, fetching players...')
       const [{ data: room }, { data: players }] = await Promise.all([
         supabase.from('rooms').select('phase').eq('id', roomId).single(),
         supabase.from('players').select('name, anonymous_name, post_answers').eq('room_id', roomId),
       ])
+      console.log('[Realtime] players fetched:', players)
       setWaitList((players ?? []).map((p) => ({
         name: p.name as string,
         anonymousName: (p.anonymous_name ?? p.name) as string,
@@ -38,24 +42,30 @@ export function GiftClient({ roomId }: { roomId: string }) {
 
     refresh()
 
-    const supabase = createClient()
+    console.log('[Realtime] channel created')
     const channel = supabase
       .channel(`gift-waiting-${roomId}`)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'players', filter: `room_id=eq.${roomId}` },
-        () => refresh()
+        (payload) => {
+          console.log('[Realtime] event received:', payload)
+          refresh()
+        }
       )
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `id=eq.${roomId}` },
         (payload) => {
+          console.log('[Realtime] event received:', payload)
           if ((payload.new as { phase: number }).phase >= 9) {
             router.push(`/room/${roomId}/post-survey`)
           }
         }
       )
-      .subscribe()
+      .subscribe((status) => {
+        console.log('[Realtime] status:', status)
+      })
 
     return () => { supabase.removeChannel(channel) }
   }, [done, roomId, router])

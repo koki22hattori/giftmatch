@@ -144,10 +144,12 @@ function WaitingRoom({
     const supabase = createClient()
 
     async function refresh() {
+      console.log('[Realtime] refresh() called, fetching players...')
       const [{ data: room }, { data: players }] = await Promise.all([
         supabase.from('rooms').select('phase').eq('id', roomId).single(),
         supabase.from('players').select('name, answers').eq('room_id', roomId),
       ])
+      console.log('[Realtime] players fetched:', players)
       const phase = (room?.phase ?? 1) as number
       const updated = (players ?? []) as { name: string; answers: SurveyAnswers | null }[]
       setPlayers(updated)
@@ -156,24 +158,29 @@ function WaitingRoom({
       }
     }
 
+    console.log('[Realtime] channel created')
     const channel = supabase
       .channel(`survey-waiting-${roomId}`)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'players', filter: `room_id=eq.${roomId}` },
-        () => refresh()
+        (payload) => {
+          console.log('[Realtime] event received:', payload)
+          refresh()
+        }
       )
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `id=eq.${roomId}` },
         (payload) => {
+          console.log('[Realtime] event received:', payload)
           if ((payload.new as { phase: number }).phase >= 3) {
             router.push(`/room/${roomId}/results`)
           }
         }
       )
       .subscribe((status) => {
-        console.log('Realtime status:', status)
+        console.log('[Realtime] status:', status)
       })
 
     return () => { supabase.removeChannel(channel) }
