@@ -121,6 +121,8 @@ export function SantaClient({
 
     refresh()
 
+    const interval = setInterval(refresh, 3000)
+
     console.log('[Realtime] channel created')
     const channel = supabase
       .channel(`santa-waiting-${roomId}`)
@@ -146,7 +148,7 @@ export function SantaClient({
         console.log('[Realtime] status:', status)
       })
 
-    return () => { supabase.removeChannel(channel) }
+    return () => { clearInterval(interval); supabase.removeChannel(channel) }
   }, [phase, roomId, router])
 
   // ─────────────────────────────────────────────────────────────────────────

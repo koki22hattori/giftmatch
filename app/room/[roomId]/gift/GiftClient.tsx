@@ -42,6 +42,8 @@ export function GiftClient({ roomId }: { roomId: string }) {
 
     refresh()
 
+    const interval = setInterval(refresh, 3000)
+
     console.log('[Realtime] channel created')
     const channel = supabase
       .channel(`gift-waiting-${roomId}`)
@@ -67,7 +69,7 @@ export function GiftClient({ roomId }: { roomId: string }) {
         console.log('[Realtime] status:', status)
       })
 
-    return () => { supabase.removeChannel(channel) }
+    return () => { clearInterval(interval); supabase.removeChannel(channel) }
   }, [done, roomId, router])
 
   async function handleSubmit(e: React.FormEvent) {

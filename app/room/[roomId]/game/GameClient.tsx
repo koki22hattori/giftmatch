@@ -293,6 +293,8 @@ export function GameClient({ roomId }: { roomId: string }) {
 
     refresh()
 
+    const interval = setInterval(refresh, 3000)
+
     console.log('[Realtime] channel created')
     const channel = supabase
       .channel(`game-waiting-${roomId}`)
@@ -318,7 +320,7 @@ export function GameClient({ roomId }: { roomId: string }) {
         console.log('[Realtime] status:', status)
       })
 
-    return () => { supabase.removeChannel(channel) }
+    return () => { clearInterval(interval); supabase.removeChannel(channel) }
   }, [gamePhase, roomId, router])
 
   // ─────────────────────────────────────────────────────────────────────────

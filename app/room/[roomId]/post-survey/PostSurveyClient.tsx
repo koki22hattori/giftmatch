@@ -88,6 +88,8 @@ export function PostSurveyClient({ roomId }: { roomId: string }) {
 
     refresh()
 
+    const interval = setInterval(refresh, 3000)
+
     console.log('[Realtime] channel created')
     const channel = supabase
       .channel(`post-survey-waiting-${roomId}`)
@@ -113,7 +115,7 @@ export function PostSurveyClient({ roomId }: { roomId: string }) {
         console.log('[Realtime] status:', status)
       })
 
-    return () => { supabase.removeChannel(channel) }
+    return () => { clearInterval(interval); supabase.removeChannel(channel) }
   }, [step, roomId, router])
 
   async function handleSubmit() {

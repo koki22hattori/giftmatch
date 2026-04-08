@@ -158,6 +158,8 @@ function WaitingRoom({
       }
     }
 
+    const interval = setInterval(refresh, 3000)
+
     console.log('[Realtime] channel created')
     const channel = supabase
       .channel(`survey-waiting-${roomId}`)
@@ -183,7 +185,7 @@ function WaitingRoom({
         console.log('[Realtime] status:', status)
       })
 
-    return () => { supabase.removeChannel(channel) }
+    return () => { clearInterval(interval); supabase.removeChannel(channel) }
   }, [roomId, router])
 
   const submitted = players.filter((p) => p.answers !== null).length
