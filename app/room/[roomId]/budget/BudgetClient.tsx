@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { setBudget, getBudgetStatus } from '@/app/actions'
+import { setBudget } from '@/app/actions'
+import { createClient } from '@/lib/supabase/client'
 
 type Props = {
   roomId: string
@@ -27,27 +28,34 @@ export function BudgetClient({ roomId, initialMinBudget, initialBudgetDiff, init
 
   const phaseRef = useRef(initialPhase)
 
-  // Poll for phase advancement (for players who didn't submit the form)
+  // Realtime: rooms テーブルの phase・予算変更を監視
   useEffect(() => {
     if (initialPhase >= 5) {
       router.push(`/room/${roomId}/game`)
       return
     }
 
-    const interval = setInterval(async () => {
-      const status = await getBudgetStatus(roomId)
-      if (status.phase >= 5) {
-        clearInterval(interval)
-        router.push(`/room/${roomId}/game`)
-        return
-      }
-      // Budget was set by someone else — show waiting state
-      if (status.minBudget !== null && status.budgetDiff !== null && !settled) {
-        setSettled({ min: status.minBudget, diff: status.budgetDiff })
-      }
-    }, 3000)
+    const supabase = createClient()
+    const channel = supabase
+      .channel(`budget-room-${roomId}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `id=eq.${roomId}` },
+        (payload) => {
+          const row = payload.new as { phase: number; min_budget: number | null; budget_diff: number | null }
+          if (row.phase >= 5) {
+            router.push(`/room/${roomId}/game`)
+            return
+          }
+          // 他の人が予算を入力した → 待機表示に切り替え
+          if (row.min_budget !== null && row.budget_diff !== null && !settled) {
+            setSettled({ min: row.min_budget, diff: row.budget_diff })
+          }
+        }
+      )
+      .subscribe()
 
-    return () => clearInterval(interval)
+    return () => { supabase.removeChannel(channel) }
   }, [roomId, router, initialPhase, settled])
 
   async function handleSubmit(e: React.FormEvent) {

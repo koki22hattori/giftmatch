@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { confirmSanta, getMyTargetDetails, getSantaData } from '@/app/actions'
+import { createClient } from '@/lib/supabase/client'
 
 type Assignment = {
   name: string
@@ -84,11 +85,11 @@ export function SantaClient({
     setPhase('waiting')
   }
 
-  // ── Waiting: poll for all confirmed ──────────────────────────────────────
+  // ── Waiting: Realtime ────────────────────────────────────────────────────
   useEffect(() => {
     if (phase !== 'waiting') return
 
-    async function poll() {
+    async function refresh() {
       const data = await getSantaData(roomId)
       const updated = data.players.map((p) => ({
         name: p.name,
@@ -103,9 +104,28 @@ export function SantaClient({
       }
     }
 
-    poll()
-    const iv = setInterval(poll, 3000)
-    return () => clearInterval(iv)
+    refresh()
+
+    const supabase = createClient()
+    const channel = supabase
+      .channel(`santa-waiting-${roomId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'players', filter: `room_id=eq.${roomId}` },
+        () => refresh()
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `id=eq.${roomId}` },
+        (payload) => {
+          if ((payload.new as { phase: number }).phase >= 8) {
+            router.push(`/room/${roomId}/gift`)
+          }
+        }
+      )
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
   }, [phase, roomId, router])
 
   // ─────────────────────────────────────────────────────────────────────────

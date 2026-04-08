@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { getPhase9Data, submitPostSurvey, getPostSurveyStatus } from '@/app/actions'
+import { createClient } from '@/lib/supabase/client'
 
 type OtherPresent = { recipientName: string; anonymousName: string; giftName: string }
 type Player       = { name: string; anonymousName: string }
@@ -44,17 +45,38 @@ export function PostSurveyClient({ roomId }: { roomId: string }) {
     })
   }, [roomId])
 
-  // Poll when waiting
+  // Realtime when waiting
   useEffect(() => {
     if (step !== 'waiting') return
-    async function poll() {
+
+    async function refresh() {
       const s = await getPostSurveyStatus(roomId)
       setWaitList(s.players)
       if (s.phase >= 10) router.push(`/room/${roomId}/finale`)
     }
-    poll()
-    const iv = setInterval(poll, 3000)
-    return () => clearInterval(iv)
+
+    refresh()
+
+    const supabase = createClient()
+    const channel = supabase
+      .channel(`post-survey-waiting-${roomId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'players', filter: `room_id=eq.${roomId}` },
+        () => refresh()
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `id=eq.${roomId}` },
+        (payload) => {
+          if ((payload.new as { phase: number }).phase >= 10) {
+            router.push(`/room/${roomId}/finale`)
+          }
+        }
+      )
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
   }, [step, roomId, router])
 
   async function handleSubmit() {

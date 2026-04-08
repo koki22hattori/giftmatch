@@ -1,12 +1,31 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { advancePhase } from '@/app/actions'
+import { createClient } from '@/lib/supabase/client'
 
 export function AdvanceButton({ roomId }: { roomId: string }) {
   const [loading, setLoading] = useState(false)
   const router = useRouter()
+
+  // 他のプレイヤーがフェーズを進めたとき自動遷移
+  useEffect(() => {
+    const supabase = createClient()
+    const channel = supabase
+      .channel(`results-phase-${roomId}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `id=eq.${roomId}` },
+        (payload) => {
+          if ((payload.new as { phase: number }).phase >= 4) {
+            router.push(`/room/${roomId}/budget`)
+          }
+        }
+      )
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [roomId, router])
 
   async function handleAdvance() {
     setLoading(true)

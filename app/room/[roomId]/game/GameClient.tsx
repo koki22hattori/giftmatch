@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { saveGameScore, getGameStatus } from '@/app/actions'
+import { createClient } from '@/lib/supabase/client'
 
 // ── Constants ──────────────────────────────────────────────────────────────
 const INITIAL_TIME = 2200   // ms per box
@@ -271,11 +272,11 @@ export function GameClient({ roomId }: { roomId: string }) {
   const onMouseUp   = (e: React.MouseEvent) => onPointerUp(e.clientX, e.clientY)
   const onMouseLeave = () => { isDraggingRef.current = false; setDragOffset(0) }
 
-  // ── Waiting screen polling ────────────────────────────────────────────────
+  // ── Waiting screen: Realtime ─────────────────────────────────────────────
   useEffect(() => {
-    if (gamePhase !== 'waiting' && gamePhase !== 'all-done') return
+    if (gamePhase !== 'waiting') return
 
-    async function poll() {
+    async function refresh() {
       const status = await getGameStatus(roomId)
       setWaitPlayers(status.players)
       if (status.phase >= 6) {
@@ -283,9 +284,28 @@ export function GameClient({ roomId }: { roomId: string }) {
       }
     }
 
-    poll()
-    const iv = setInterval(poll, 3000)
-    return () => clearInterval(iv)
+    refresh()
+
+    const supabase = createClient()
+    const channel = supabase
+      .channel(`game-waiting-${roomId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'players', filter: `room_id=eq.${roomId}` },
+        () => refresh()
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `id=eq.${roomId}` },
+        (payload) => {
+          if ((payload.new as { phase: number }).phase >= 6) {
+            router.push(`/room/${roomId}/reveal`)
+          }
+        }
+      )
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
   }, [gamePhase, roomId, router])
 
   // ─────────────────────────────────────────────────────────────────────────

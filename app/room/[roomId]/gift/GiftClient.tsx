@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { submitGiftRecord, getGiftStatus } from '@/app/actions'
+import { createClient } from '@/lib/supabase/client'
 
 export function GiftClient({ roomId }: { roomId: string }) {
   const router = useRouter()
@@ -18,17 +19,38 @@ export function GiftClient({ roomId }: { roomId: string }) {
     setPlayerName(localStorage.getItem(`giftmatch_player_${roomId}`))
   }, [roomId])
 
-  // Poll when waiting
+  // Realtime when waiting
   useEffect(() => {
     if (!done) return
-    async function poll() {
+
+    async function refresh() {
       const status = await getGiftStatus(roomId)
       setWaitList(status.players)
       if (status.phase >= 9) router.push(`/room/${roomId}/post-survey`)
     }
-    poll()
-    const iv = setInterval(poll, 3000)
-    return () => clearInterval(iv)
+
+    refresh()
+
+    const supabase = createClient()
+    const channel = supabase
+      .channel(`gift-waiting-${roomId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'players', filter: `room_id=eq.${roomId}` },
+        () => refresh()
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `id=eq.${roomId}` },
+        (payload) => {
+          if ((payload.new as { phase: number }).phase >= 9) {
+            router.push(`/room/${roomId}/post-survey`)
+          }
+        }
+      )
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
   }, [done, roomId, router])
 
   async function handleSubmit(e: React.FormEvent) {

@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { advancePhase } from '@/app/actions'
+import { createClient } from '@/lib/supabase/client'
 
 type RankedPlayer = {
   rank: number
@@ -44,6 +45,24 @@ export function RevealClient({
   useEffect(() => {
     setPlayerName(localStorage.getItem(`giftmatch_player_${roomId}`))
   }, [roomId])
+
+  // 他のプレイヤーがフェーズを進めたとき自動遷移
+  useEffect(() => {
+    const supabase = createClient()
+    const channel = supabase
+      .channel(`reveal-phase-${roomId}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `id=eq.${roomId}` },
+        (payload) => {
+          if ((payload.new as { phase: number }).phase >= 7) {
+            router.push(`/room/${roomId}/santa`)
+          }
+        }
+      )
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [roomId, router])
 
   // 段階的リビール
   useEffect(() => {
