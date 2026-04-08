@@ -182,15 +182,26 @@ export function GameClient({ roomId }: { roomId: string }) {
       const best = Math.max(...updated)
       if (playerName) {
         ;(async () => {
-          const supabase = createClient()
-          const { data: player } = await supabase
-            .from('players').select('game_score').eq('room_id', roomId).eq('name', playerName).single()
-          if (player && (player.game_score === null || best > player.game_score)) {
-            await supabase.from('players').update({ game_score: best }).eq('room_id', roomId).eq('name', playerName)
-          }
-          const { data: allPlayers } = await supabase.from('players').select('game_score').eq('room_id', roomId)
-          if (allPlayers?.every((p) => p.game_score !== null)) {
-            await supabase.from('rooms').update({ phase: 6 }).eq('id', roomId).eq('phase', 5)
+          try {
+            const supabase = createClient()
+            const { data: player } = await supabase
+              .from('players').select('game_score').eq('room_id', roomId).eq('name', playerName).single()
+            if (player && (player.game_score === null || best > player.game_score)) {
+              const { error } = await supabase
+                .from('players').update({ game_score: best }).eq('room_id', roomId).eq('name', playerName)
+              if (error) {
+                console.error('[Game] game_score update failed:', error)
+                alert(`[デバッグ] スコア保存失敗:\ncode: ${error.code}\nmessage: ${error.message}`)
+                return
+              }
+            }
+            const { data: allPlayers } = await supabase.from('players').select('game_score').eq('room_id', roomId)
+            if (allPlayers?.every((p) => p.game_score !== null)) {
+              await supabase.from('rooms').update({ phase: 6 }).eq('id', roomId).eq('phase', 5)
+            }
+          } catch (e) {
+            console.error('[Game] saveGameScore failed:', e)
+            alert(`[デバッグ] スコア保存失敗:\n${e instanceof Error ? e.message : String(e)}`)
           }
         })()
       }

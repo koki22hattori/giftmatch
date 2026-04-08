@@ -120,24 +120,36 @@ export function PostSurveyClient({ roomId }: { roomId: string }) {
   async function handleSubmit() {
     if (!playerName) return
     setStep('submitting')
-    const supabase = createClient()
-    const { data: player } = await supabase
-      .from('players').select('post_answers').eq('room_id', roomId).eq('name', playerName).single()
-    const existing = (player?.post_answers as Record<string, unknown>) ?? {}
-    await supabase.from('players').update({
-      post_answers: {
-        ...existing,
-        impression,
-        giver_guess: giverGuess,
-        post_want_ranks: wantRanks.map((p) => p.recipientName),
-        anon_guesses: anonGuesses,
-      },
-    }).eq('room_id', roomId).eq('name', playerName)
-    const { data: all } = await supabase.from('players').select('post_answers').eq('room_id', roomId)
-    if (all?.every((p) => (p.post_answers as Record<string, unknown> | null)?.impression)) {
-      await supabase.from('rooms').update({ phase: 10 }).eq('id', roomId).eq('phase', 9)
+    try {
+      const supabase = createClient()
+      const { data: player } = await supabase
+        .from('players').select('post_answers').eq('room_id', roomId).eq('name', playerName).single()
+      const existing = (player?.post_answers as Record<string, unknown>) ?? {}
+      const { error } = await supabase.from('players').update({
+        post_answers: {
+          ...existing,
+          impression,
+          giver_guess: giverGuess,
+          post_want_ranks: wantRanks.map((p) => p.recipientName),
+          anon_guesses: anonGuesses,
+        },
+      }).eq('room_id', roomId).eq('name', playerName)
+      if (error) {
+        console.error('[PostSurvey] update failed:', error)
+        alert(`[デバッグ] 事後アンケート保存失敗:\ncode: ${error.code}\nmessage: ${error.message}`)
+        setStep(4)
+        return
+      }
+      const { data: all } = await supabase.from('players').select('post_answers').eq('room_id', roomId)
+      if (all?.every((p) => (p.post_answers as Record<string, unknown> | null)?.impression)) {
+        await supabase.from('rooms').update({ phase: 10 }).eq('id', roomId).eq('phase', 9)
+      }
+      setStep('waiting')
+    } catch (e) {
+      console.error('[PostSurvey] handleSubmit failed:', e)
+      alert(`[デバッグ] 事後アンケート保存失敗:\n${e instanceof Error ? e.message : String(e)}`)
+      setStep(4)
     }
-    setStep('waiting')
   }
 
   // Rank reorder helpers

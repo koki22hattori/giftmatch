@@ -88,21 +88,33 @@ export function SantaClient({
   async function handleConfirm() {
     if (!playerName || confirming) return
     setConfirming(true)
-    const supabase = createClient()
-    const { data: player } = await supabase
-      .from('players').select('post_answers').eq('room_id', roomId).eq('name', playerName).single()
-    const existing = (player?.post_answers as Record<string, unknown>) ?? {}
-    await supabase.from('players')
-      .update({ post_answers: { ...existing, santa_confirmed: true } })
-      .eq('room_id', roomId).eq('name', playerName)
-    const { data: allPlayers } = await supabase.from('players').select('post_answers').eq('room_id', roomId)
-    const allConfirmed = allPlayers?.every(
-      (p) => (p.post_answers as Record<string, unknown> | null)?.santa_confirmed === true
-    )
-    if (allConfirmed) {
-      await supabase.from('rooms').update({ phase: 8 }).eq('id', roomId).eq('phase', 7)
+    try {
+      const supabase = createClient()
+      const { data: player } = await supabase
+        .from('players').select('post_answers').eq('room_id', roomId).eq('name', playerName).single()
+      const existing = (player?.post_answers as Record<string, unknown>) ?? {}
+      const { error } = await supabase.from('players')
+        .update({ post_answers: { ...existing, santa_confirmed: true } })
+        .eq('room_id', roomId).eq('name', playerName)
+      if (error) {
+        console.error('[Santa] confirm update failed:', error)
+        alert(`[デバッグ] 確認保存失敗:\ncode: ${error.code}\nmessage: ${error.message}`)
+        setConfirming(false)
+        return
+      }
+      const { data: allPlayers } = await supabase.from('players').select('post_answers').eq('room_id', roomId)
+      const allConfirmed = allPlayers?.every(
+        (p) => (p.post_answers as Record<string, unknown> | null)?.santa_confirmed === true
+      )
+      if (allConfirmed) {
+        await supabase.from('rooms').update({ phase: 8 }).eq('id', roomId).eq('phase', 7)
+      }
+      setPhase('waiting')
+    } catch (e) {
+      console.error('[Santa] handleConfirm failed:', e)
+      alert(`[デバッグ] 確認保存失敗:\n${e instanceof Error ? e.message : String(e)}`)
+      setConfirming(false)
     }
-    setPhase('waiting')
   }
 
   // ── Waiting: Realtime ────────────────────────────────────────────────────
