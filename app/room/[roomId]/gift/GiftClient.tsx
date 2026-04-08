@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { submitGiftRecord, getGiftStatus } from '@/app/actions'
+import { submitGiftRecord } from '@/app/actions'
 import { createClient } from '@/lib/supabase/client'
 
 export function GiftClient({ roomId }: { roomId: string }) {
@@ -24,9 +24,16 @@ export function GiftClient({ roomId }: { roomId: string }) {
     if (!done) return
 
     async function refresh() {
-      const status = await getGiftStatus(roomId)
-      setWaitList(status.players)
-      if (status.phase >= 9) router.push(`/room/${roomId}/post-survey`)
+      const [{ data: room }, { data: players }] = await Promise.all([
+        supabase.from('rooms').select('phase').eq('id', roomId).single(),
+        supabase.from('players').select('name, anonymous_name, post_answers').eq('room_id', roomId),
+      ])
+      setWaitList((players ?? []).map((p) => ({
+        name: p.name as string,
+        anonymousName: (p.anonymous_name ?? p.name) as string,
+        done: !!(p.post_answers as Record<string, unknown> | null)?.gift_name,
+      })))
+      if ((room?.phase ?? 8) >= 9) router.push(`/room/${roomId}/post-survey`)
     }
 
     refresh()

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { getPhase9Data, submitPostSurvey, getPostSurveyStatus } from '@/app/actions'
+import { submitPostSurvey } from '@/app/actions'
 import { createClient } from '@/lib/supabase/client'
 
 type OtherPresent = { recipientName: string; anonymousName: string; giftName: string }
@@ -32,17 +32,37 @@ export function PostSurveyClient({ roomId }: { roomId: string }) {
     setPlayerName(name)
     if (!name) { setStep(1); return }
 
-    getPhase9Data(roomId, name).then((data) => {
-      if (!data) { setStep(1); return }
-      setOthers(data.others)
-      setAllPlayers(data.allPlayers)
-      setWantRanks(data.others)
-      // Init empty anon guesses
-      const init: Record<string, string> = {}
-      for (const p of data.allPlayers) init[p.anonymousName] = ''
-      setAnonGuesses(init)
-      setStep(1)
-    })
+    const supabase = createClient()
+    supabase
+      .from('players')
+      .select('name, anonymous_name, santa_target, post_answers')
+      .eq('room_id', roomId)
+      .then(({ data: players }) => {
+        if (!players) { setStep(1); return }
+        const giverOf: Record<string, string> = {}
+        for (const p of players) { if (p.santa_target) giverOf[p.santa_target] = p.name }
+        const others = players
+          .filter((p) => p.name !== name)
+          .map((p) => {
+            const giver = players.find((g) => g.name === giverOf[p.name])
+            return {
+              recipientName: p.name as string,
+              anonymousName: (p.anonymous_name ?? p.name) as string,
+              giftName: ((giver?.post_answers as Record<string, unknown> | null)?.gift_name as string) ?? '不明',
+            }
+          })
+        const allPlayers = players.map((p) => ({
+          name: p.name as string,
+          anonymousName: (p.anonymous_name ?? p.name) as string,
+        }))
+        setOthers(others)
+        setAllPlayers(allPlayers)
+        setWantRanks(others)
+        const init: Record<string, string> = {}
+        for (const p of allPlayers) init[p.anonymousName] = ''
+        setAnonGuesses(init)
+        setStep(1)
+      })
   }, [roomId])
 
   // Realtime when waiting
@@ -50,9 +70,16 @@ export function PostSurveyClient({ roomId }: { roomId: string }) {
     if (step !== 'waiting') return
 
     async function refresh() {
-      const s = await getPostSurveyStatus(roomId)
-      setWaitList(s.players)
-      if (s.phase >= 10) router.push(`/room/${roomId}/finale`)
+      const [{ data: room }, { data: players }] = await Promise.all([
+        supabase.from('rooms').select('phase').eq('id', roomId).single(),
+        supabase.from('players').select('name, anonymous_name, post_answers').eq('room_id', roomId),
+      ])
+      setWaitList((players ?? []).map((p) => ({
+        name: p.name as string,
+        anonymousName: (p.anonymous_name ?? p.name) as string,
+        done: !!(p.post_answers as Record<string, unknown> | null)?.impression,
+      })))
+      if ((room?.phase ?? 9) >= 10) router.push(`/room/${roomId}/finale`)
     }
 
     refresh()

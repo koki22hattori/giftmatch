@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { confirmSanta, getMyTargetDetails, getSantaData } from '@/app/actions'
+import { confirmSanta } from '@/app/actions'
 import { createClient } from '@/lib/supabase/client'
 
 type Assignment = {
@@ -73,8 +73,16 @@ export function SantaClient({
     setPhase('personal')
     if (!playerName) return
     setLoadingDetails(true)
-    const details = await getMyTargetDetails(roomId, playerName)
-    setTargetDetails(details)
+    const supabase = createClient()
+    const { data: me } = await supabase
+      .from('players').select('santa_target').eq('room_id', roomId).eq('name', playerName).single()
+    if (!me?.santa_target) { setTargetDetails(null); setLoadingDetails(false); return }
+    const { data: target } = await supabase
+      .from('players').select('name, answers').eq('room_id', roomId).eq('name', me.santa_target).single()
+    setTargetDetails({
+      targetName: target?.name ?? '',
+      address: (target?.answers as { address?: string } | null)?.address ?? '（住所未設定）',
+    })
     setLoadingDetails(false)
   }
 
@@ -90,16 +98,19 @@ export function SantaClient({
     if (phase !== 'waiting') return
 
     async function refresh() {
-      const data = await getSantaData(roomId)
-      const updated = data.players.map((p) => ({
-        name: p.name,
-        anonymousName: p.anonymous_name ?? p.name,
-        targetName: p.santa_target ?? '',
+      const [{ data: room }, { data: players }] = await Promise.all([
+        supabase.from('rooms').select('phase').eq('id', roomId).single(),
+        supabase.from('players').select('name, anonymous_name, santa_target, post_answers').eq('room_id', roomId),
+      ])
+      const updated = (players ?? []).map((p) => ({
+        name: p.name as string,
+        anonymousName: (p.anonymous_name ?? p.name) as string,
+        targetName: (p.santa_target ?? '') as string,
         targetAnonymousName: '',
         confirmed: (p.post_answers as Record<string, unknown> | null)?.santa_confirmed === true,
       }))
       setWaitList(updated)
-      if (data.phase >= 8) {
+      if ((room?.phase ?? 7) >= 8) {
         router.push(`/room/${roomId}/gift`)
       }
     }

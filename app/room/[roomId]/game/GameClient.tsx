@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { saveGameScore, getGameStatus } from '@/app/actions'
+import { saveGameScore } from '@/app/actions'
 import { createClient } from '@/lib/supabase/client'
 
 // ── Constants ──────────────────────────────────────────────────────────────
@@ -277,9 +277,12 @@ export function GameClient({ roomId }: { roomId: string }) {
     if (gamePhase !== 'waiting') return
 
     async function refresh() {
-      const status = await getGameStatus(roomId)
-      setWaitPlayers(status.players)
-      if (status.phase >= 6) {
+      const [{ data: room }, { data: players }] = await Promise.all([
+        supabase.from('rooms').select('phase').eq('id', roomId).single(),
+        supabase.from('players').select('name, game_score, anonymous_name').eq('room_id', roomId),
+      ])
+      setWaitPlayers((players ?? []) as Array<{ name: string; game_score: number | null; anonymous_name: string | null }>)
+      if ((room?.phase ?? 5) >= 6) {
         router.push(`/room/${roomId}/reveal`)
       }
     }
