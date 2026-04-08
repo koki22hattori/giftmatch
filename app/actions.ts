@@ -70,13 +70,17 @@ export async function submitSurvey(
 ) {
   const supabase = createClient()
 
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('players')
     .update({ answers })
     .eq('room_id', roomId)
     .eq('name', playerName)
 
-  if (error) throw new Error('回答の保存に失敗しました')
+  console.log('[Survey] update result:', data, error)
+  if (error) {
+    console.error('[Survey] update failed:', error)
+    throw new Error('回答の保存に失敗しました')
+  }
 
   // 全員回答済みなら phase 3 へ自動進行
   const { data: players } = await supabase
@@ -85,7 +89,12 @@ export async function submitSurvey(
     .eq('room_id', roomId)
 
   if (players?.every((p) => p.answers !== null)) {
-    await supabase.from('rooms').update({ phase: 3 }).eq('id', roomId)
+    const { data: phaseData, error: phaseError } = await supabase
+      .from('rooms')
+      .update({ phase: 3 })
+      .eq('id', roomId)
+    console.log('[Survey] phase update result:', phaseData, phaseError)
+    if (phaseError) console.error('[Survey] phase update failed:', phaseError)
   }
 }
 

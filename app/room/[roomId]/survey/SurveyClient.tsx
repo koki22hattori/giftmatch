@@ -2,8 +2,13 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { submitSurvey } from '@/app/actions'
-import type { SurveyAnswers } from '@/app/actions'
+type SurveyAnswers = {
+  address: string
+  budget: number
+  genre: string
+  wantRanks: string[]
+  giveRanks: string[]
+}
 import { createClient } from '@/lib/supabase/client'
 
 const PLAYERS = ['服部光貴', '五十子裕', '岡野透', '渋谷瞬', '服部直道', '木下清文']
@@ -278,16 +283,50 @@ function SurveyForm({
     setIsSubmitting(true)
     setError('')
     try {
-      await submitSurvey(roomId, playerName, {
-        address: address.trim(),
-        budget: Number(budget),
-        genre,
-        wantRanks,
-        giveRanks,
-      })
       const supabase = createClient()
-      const { data } = await supabase.from('players').select('name, answers').eq('room_id', roomId)
-      onSubmitted((data ?? []) as { name: string; answers: SurveyAnswers | null }[])
+
+      // answers を保存
+      const { data, error } = await supabase
+        .from('players')
+        .update({
+          answers: {
+            address: address.trim(),
+            budget: Number(budget),
+            genre,
+            wantRanks,
+            giveRanks,
+          },
+        })
+        .eq('room_id', roomId)
+        .eq('name', playerName)
+
+      console.log('[Survey] update result:', data, error)
+      if (error) {
+        console.error('[Survey] update failed:', error)
+        throw error
+      }
+
+      // 全員回答済みなら phase 3 へ自動進行
+      const { data: allPlayers } = await supabase
+        .from('players')
+        .select('answers')
+        .eq('room_id', roomId)
+
+      if (allPlayers?.every((p) => p.answers !== null)) {
+        const { data: phaseData, error: phaseError } = await supabase
+          .from('rooms')
+          .update({ phase: 3 })
+          .eq('id', roomId)
+        console.log('[Survey] phase update result:', phaseData, phaseError)
+        if (phaseError) console.error('[Survey] phase update failed:', phaseError)
+      }
+
+      // 最新のプレイヤーリストを取得して親に渡す
+      const { data: updatedPlayers } = await supabase
+        .from('players')
+        .select('name, answers')
+        .eq('room_id', roomId)
+      onSubmitted((updatedPlayers ?? []) as { name: string; answers: SurveyAnswers | null }[])
     } catch (e) {
       setError('送信に失敗しました。もう一度お試しください。')
       setIsSubmitting(false)
