@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { submitSurvey, getMyPlayerData } from '@/app/actions'
+import { submitSurvey } from '@/app/actions'
 import type { SurveyAnswers } from '@/app/actions'
 import { createClient } from '@/lib/supabase/client'
 
@@ -560,11 +560,23 @@ export function SurveyClient({ roomId }: { roomId: string }) {
     setPlayerName(stored)
 
     async function init() {
+      const supabase = createClient()
+
+      async function fetchPlayerData() {
+        const { data } = await supabase
+          .from('players')
+          .select('anonymous_name, answers')
+          .eq('room_id', roomId)
+          .eq('name', stored!)
+          .single()
+        return data as { anonymous_name: string | null; answers: SurveyAnswers | null } | null
+      }
+
       // anonymous_name が DB に書き込まれるまで最大3回リトライ
-      let data = await getMyPlayerData(roomId, stored!)
+      let data = await fetchPlayerData()
       for (let i = 0; i < 3 && !data?.anonymous_name; i++) {
         await new Promise((r) => setTimeout(r, 1200))
-        data = await getMyPlayerData(roomId, stored!)
+        data = await fetchPlayerData()
       }
 
       setAnonymousName(data?.anonymous_name ?? null)
