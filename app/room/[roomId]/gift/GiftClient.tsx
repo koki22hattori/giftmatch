@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { submitGiftRecord } from '@/app/actions'
 import { createClient } from '@/lib/supabase/client'
 
 export function GiftClient({ roomId }: { roomId: string }) {
@@ -80,7 +79,18 @@ export function GiftClient({ roomId }: { roomId: string }) {
     setSubmitting(true)
     setError('')
     try {
-      await submitGiftRecord(roomId, playerName!, giftName.trim(), amt)
+      const supabase = createClient()
+      const { data: player } = await supabase
+        .from('players').select('post_answers').eq('room_id', roomId).eq('name', playerName!).single()
+      const existing = (player?.post_answers as Record<string, unknown>) ?? {}
+      const { error } = await supabase.from('players')
+        .update({ post_answers: { ...existing, gift_name: giftName.trim(), actual_amount: amt } })
+        .eq('room_id', roomId).eq('name', playerName!)
+      if (error) throw error
+      const { data: all } = await supabase.from('players').select('post_answers').eq('room_id', roomId)
+      if (all?.every((p) => (p.post_answers as Record<string, unknown> | null)?.gift_name)) {
+        await supabase.from('rooms').update({ phase: 9 }).eq('id', roomId).eq('phase', 8)
+      }
       setDone(true)
     } catch {
       setError('保存に失敗しました')

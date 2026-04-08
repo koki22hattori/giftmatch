@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { saveGameScore } from '@/app/actions'
 import { createClient } from '@/lib/supabase/client'
 
 // ── Constants ──────────────────────────────────────────────────────────────
@@ -181,7 +180,20 @@ export function GameClient({ roomId }: { roomId: string }) {
 
     if (roundRef.current >= MAX_ROUNDS) {
       const best = Math.max(...updated)
-      if (playerName) void saveGameScore(roomId, playerName, best)
+      if (playerName) {
+        ;(async () => {
+          const supabase = createClient()
+          const { data: player } = await supabase
+            .from('players').select('game_score').eq('room_id', roomId).eq('name', playerName).single()
+          if (player && (player.game_score === null || best > player.game_score)) {
+            await supabase.from('players').update({ game_score: best }).eq('room_id', roomId).eq('name', playerName)
+          }
+          const { data: allPlayers } = await supabase.from('players').select('game_score').eq('room_id', roomId)
+          if (allPlayers?.every((p) => p.game_score !== null)) {
+            await supabase.from('rooms').update({ phase: 6 }).eq('id', roomId).eq('phase', 5)
+          }
+        })()
+      }
       setGamePhase('all-done')
     } else {
       setGamePhase('round-result')

@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { submitPostSurvey } from '@/app/actions'
 import { createClient } from '@/lib/supabase/client'
 
 type OtherPresent = { recipientName: string; anonymousName: string; giftName: string }
@@ -121,12 +120,23 @@ export function PostSurveyClient({ roomId }: { roomId: string }) {
   async function handleSubmit() {
     if (!playerName) return
     setStep('submitting')
-    await submitPostSurvey(roomId, playerName, {
-      impression,
-      giverGuess,
-      postWantRanks: wantRanks.map((p) => p.recipientName),
-      anonGuesses,
-    })
+    const supabase = createClient()
+    const { data: player } = await supabase
+      .from('players').select('post_answers').eq('room_id', roomId).eq('name', playerName).single()
+    const existing = (player?.post_answers as Record<string, unknown>) ?? {}
+    await supabase.from('players').update({
+      post_answers: {
+        ...existing,
+        impression,
+        giver_guess: giverGuess,
+        post_want_ranks: wantRanks.map((p) => p.recipientName),
+        anon_guesses: anonGuesses,
+      },
+    }).eq('room_id', roomId).eq('name', playerName)
+    const { data: all } = await supabase.from('players').select('post_answers').eq('room_id', roomId)
+    if (all?.every((p) => (p.post_answers as Record<string, unknown> | null)?.impression)) {
+      await supabase.from('rooms').update({ phase: 10 }).eq('id', roomId).eq('phase', 9)
+    }
     setStep('waiting')
   }
 

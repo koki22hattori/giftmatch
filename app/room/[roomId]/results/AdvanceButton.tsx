@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { advancePhase } from '@/app/actions'
 import { createClient } from '@/lib/supabase/client'
 
 export function AdvanceButton({ roomId }: { roomId: string }) {
@@ -29,7 +28,8 @@ export function AdvanceButton({ roomId }: { roomId: string }) {
 
   async function handleAdvance() {
     setLoading(true)
-    await advancePhase(roomId, 3)
+    const supabase = createClient()
+    await supabase.from('rooms').update({ phase: 4 }).eq('id', roomId).eq('phase', 3)
     router.push(`/room/${roomId}/budget`)
   }
 

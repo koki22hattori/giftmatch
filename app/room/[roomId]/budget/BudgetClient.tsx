@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { setBudget } from '@/app/actions'
 import { createClient } from '@/lib/supabase/client'
 
 type Props = {
@@ -69,7 +68,13 @@ export function BudgetClient({ roomId, initialMinBudget, initialBudgetDiff, init
     setSubmitting(true)
     setError('')
     try {
-      await setBudget(roomId, min, diff)
+      const supabase = createClient()
+      const { error } = await supabase
+        .from('rooms')
+        .update({ min_budget: min, budget_diff: diff, phase: 5 })
+        .eq('id', roomId)
+        .eq('phase', 4)
+      if (error) throw error
       setSettled({ min, diff })
       router.push(`/room/${roomId}/game`)
     } catch {

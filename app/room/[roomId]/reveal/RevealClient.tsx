@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { advancePhase } from '@/app/actions'
 import { createClient } from '@/lib/supabase/client'
 
 type RankedPlayer = {
@@ -85,7 +84,8 @@ export function RevealClient({
 
   async function handleAdvance() {
     setAdvancing(true)
-    await advancePhase(roomId, 6)
+    const supabase = createClient()
+    await supabase.from('rooms').update({ phase: 7 }).eq('id', roomId).eq('phase', 6)
     router.push(`/room/${roomId}/santa`)
   }
 

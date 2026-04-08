@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { confirmSanta } from '@/app/actions'
 import { createClient } from '@/lib/supabase/client'
 
 type Assignment = {
@@ -89,7 +88,20 @@ export function SantaClient({
   async function handleConfirm() {
     if (!playerName || confirming) return
     setConfirming(true)
-    await confirmSanta(roomId, playerName)
+    const supabase = createClient()
+    const { data: player } = await supabase
+      .from('players').select('post_answers').eq('room_id', roomId).eq('name', playerName).single()
+    const existing = (player?.post_answers as Record<string, unknown>) ?? {}
+    await supabase.from('players')
+      .update({ post_answers: { ...existing, santa_confirmed: true } })
+      .eq('room_id', roomId).eq('name', playerName)
+    const { data: allPlayers } = await supabase.from('players').select('post_answers').eq('room_id', roomId)
+    const allConfirmed = allPlayers?.every(
+      (p) => (p.post_answers as Record<string, unknown> | null)?.santa_confirmed === true
+    )
+    if (allConfirmed) {
+      await supabase.from('rooms').update({ phase: 8 }).eq('id', roomId).eq('phase', 7)
+    }
     setPhase('waiting')
   }
 
