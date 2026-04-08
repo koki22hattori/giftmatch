@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { submitSurvey, getPhaseStatus, getMyPlayerData } from '@/app/actions'
+import { submitSurvey, getMyPlayerData } from '@/app/actions'
 import type { SurveyAnswers } from '@/app/actions'
 import { createClient } from '@/lib/supabase/client'
 
@@ -144,7 +144,12 @@ function WaitingRoom({
     const supabase = createClient()
 
     async function refresh() {
-      const { phase, players: updated } = await getPhaseStatus(roomId)
+      const [{ data: room }, { data: players }] = await Promise.all([
+        supabase.from('rooms').select('phase').eq('id', roomId).single(),
+        supabase.from('players').select('name, answers').eq('room_id', roomId),
+      ])
+      const phase = (room?.phase ?? 1) as number
+      const updated = (players ?? []) as { name: string; answers: SurveyAnswers | null }[]
       setPlayers(updated)
       if (phase >= 3) {
         router.push(`/room/${roomId}/results`)
@@ -269,8 +274,9 @@ function SurveyForm({
         wantRanks,
         giveRanks,
       })
-      const { players } = await getPhaseStatus(roomId)
-      onSubmitted(players)
+      const supabase = createClient()
+      const { data } = await supabase.from('players').select('name, answers').eq('room_id', roomId)
+      onSubmitted((data ?? []) as { name: string; answers: SurveyAnswers | null }[])
     } catch (e) {
       setError('送信に失敗しました。もう一度お試しください。')
       setIsSubmitting(false)
@@ -563,8 +569,9 @@ export function SurveyClient({ roomId }: { roomId: string }) {
 
       if (data?.answers) {
         // 既にアンケート回答済み → 待機室
-        const { players } = await getPhaseStatus(roomId)
-        setWaitingPlayers(players)
+        const supabase = createClient()
+        const { data: playerRows } = await supabase.from('players').select('name, answers').eq('room_id', roomId)
+        setWaitingPlayers((playerRows ?? []) as { name: string; answers: SurveyAnswers | null }[])
         setPhase('waiting')
         return
       }
