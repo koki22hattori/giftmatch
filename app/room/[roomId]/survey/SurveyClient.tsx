@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { submitSurvey, getPhaseStatus, getMyPlayerData } from '@/app/actions'
 import type { SurveyAnswers } from '@/app/actions'
+import { createClient } from '@/lib/supabase/client'
 
 const PLAYERS = ['服部光貴', '五十子裕', '岡野透', '渋谷瞬', '服部直道', '木下清文']
 const GENRES = ['食べ物', '雑貨', '体験', '実用品', 'なんでもOK'] as const
@@ -140,14 +141,35 @@ function WaitingRoom({
   const [players, setPlayers] = useState(initialPlayers)
 
   useEffect(() => {
-    const id = setInterval(async () => {
+    const supabase = createClient()
+
+    async function refresh() {
       const { phase, players: updated } = await getPhaseStatus(roomId)
       setPlayers(updated)
       if (phase >= 3) {
         router.push(`/room/${roomId}/results`)
       }
-    }, 3000)
-    return () => clearInterval(id)
+    }
+
+    const channel = supabase
+      .channel(`survey-waiting-${roomId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'players', filter: `room_id=eq.${roomId}` },
+        () => refresh()
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `id=eq.${roomId}` },
+        (payload) => {
+          if ((payload.new as { phase: number }).phase >= 3) {
+            router.push(`/room/${roomId}/results`)
+          }
+        }
+      )
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
   }, [roomId, router])
 
   const submitted = players.filter((p) => p.answers !== null).length
@@ -208,7 +230,7 @@ function WaitingRoom({
         </div>
 
         <div className="text-gray-700 text-xs font-mono animate-pulse">
-          自動更新中...
+          リアルタイム同期中...
         </div>
       </div>
     </div>
