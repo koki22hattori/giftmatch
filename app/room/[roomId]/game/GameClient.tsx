@@ -180,28 +180,71 @@ export function GameClient({ roomId }: { roomId: string }) {
 
     if (roundRef.current >= MAX_ROUNDS) {
       const best = Math.max(...updated)
-      if (playerName) {
+      console.log('[Game] endRound: playerName=', playerName, 'roomId=', roomId, 'best=', best)
+      if (!playerName) {
+        console.error('[Game] playerName is null — score not saved!')
+        alert('[デバッグ] playerName が null のためスコアを保存できません。認証をやり直してください。')
+      } else {
         ;(async () => {
           try {
             const supabase = createClient()
-            const { data: player } = await supabase
-              .from('players').select('game_score').eq('room_id', roomId).eq('name', playerName).single()
-            if (player && (player.game_score === null || best > player.game_score)) {
-              const { error } = await supabase
-                .from('players').update({ game_score: best }).eq('room_id', roomId).eq('name', playerName)
-              if (error) {
-                console.error('[Game] game_score update failed:', error)
-                alert(`[デバッグ] スコア保存失敗:\ncode: ${error.code}\nmessage: ${error.message}`)
+
+            // 既存スコアを取得
+            const { data: player, error: fetchError } = await supabase
+              .from('players')
+              .select('game_score')
+              .eq('room_id', roomId)
+              .eq('name', playerName)
+              .single()
+            console.log('[Game] fetched player:', player, 'fetchError:', fetchError)
+
+            if (!player) {
+              console.error('[Game] player row not found in DB — roomId:', roomId, 'name:', playerName)
+              alert(`[デバッグ] DBにプレイヤーが見つかりません\nroomId: ${roomId}\nname: ${playerName}`)
+              return
+            }
+
+            // 既存スコアより高い場合のみ UPDATE
+            if (player.game_score === null || best > player.game_score) {
+              console.log('[Game] updating game_score:', best, '(prev:', player.game_score, ')')
+              const { error: updateError } = await supabase
+                .from('players')
+                .update({ game_score: best })
+                .eq('room_id', roomId)
+                .eq('name', playerName)
+              if (updateError) {
+                console.error('[Game] game_score UPDATE failed:', updateError)
+                alert(`[デバッグ] スコア保存失敗:\ncode: ${updateError.code}\nmessage: ${updateError.message}\ndetails: ${updateError.details}`)
                 return
               }
+              console.log('[Game] game_score saved successfully:', best)
+            } else {
+              console.log('[Game] existing score', player.game_score, '>= best', best, '— skip update')
             }
-            const { data: allPlayers } = await supabase.from('players').select('game_score').eq('room_id', roomId)
+
+            // 全員スコア揃ったら phase 6 へ
+            const { data: allPlayers, error: allError } = await supabase
+              .from('players')
+              .select('game_score')
+              .eq('room_id', roomId)
+            console.log('[Game] allPlayers:', allPlayers, 'allError:', allError)
+
             if (allPlayers?.every((p) => p.game_score !== null)) {
-              await supabase.from('rooms').update({ phase: 6 }).eq('id', roomId).eq('phase', 5)
+              console.log('[Game] all scores in — advancing to phase 6')
+              const { error: phaseError } = await supabase
+                .from('rooms')
+                .update({ phase: 6 })
+                .eq('id', roomId)
+                .eq('phase', 5)
+              if (phaseError) {
+                console.error('[Game] phase advance failed:', phaseError)
+              } else {
+                console.log('[Game] phase advanced to 6')
+              }
             }
           } catch (e) {
-            console.error('[Game] saveGameScore failed:', e)
-            alert(`[デバッグ] スコア保存失敗:\n${e instanceof Error ? e.message : String(e)}`)
+            console.error('[Game] saveGameScore threw:', e)
+            alert(`[デバッグ] スコア保存で予期しないエラー:\n${e instanceof Error ? e.message : String(e)}`)
           }
         })()
       }
