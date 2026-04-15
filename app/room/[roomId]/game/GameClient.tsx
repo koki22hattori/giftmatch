@@ -12,9 +12,11 @@ const SWIPE_THRESHOLD = 70  // px to commit swipe
 const MAX_MISSES    = 3
 const MAX_ROUNDS    = 3
 
+const PLAYERS = ['服部光貴', '五十子裕', '岡野透', '渋谷瞬', '服部直道', '木下清文']
+
 type Color     = 'red' | 'blue'
 type BoxAnim   = 'entering' | 'idle' | 'fly-left' | 'fly-right' | 'shake'
-type GamePhase = 'intro' | 'countdown' | 'playing' | 'round-result' | 'all-done' | 'waiting'
+type GamePhase = 'init' | 'select-player' | 'intro' | 'countdown' | 'playing' | 'round-result' | 'all-done' | 'waiting'
 
 // ── Component ─────────────────────────────────────────────────────────────
 export function GameClient({ roomId }: { roomId: string }) {
@@ -22,9 +24,10 @@ export function GameClient({ roomId }: { roomId: string }) {
 
   // Player
   const [playerName, setPlayerName] = useState<string | null>(null)
+  const playerNameRef = useRef<string | null>(null)  // stale closure 対策
 
   // Game phase
-  const [gamePhase, setGamePhase] = useState<GamePhase>('intro')
+  const [gamePhase, setGamePhase] = useState<GamePhase>('init')
   const [countdown, setCountdown] = useState(3)
 
   // Round tracking
@@ -69,8 +72,25 @@ export function GameClient({ roomId }: { roomId: string }) {
 
   // ── Init ──────────────────────────────────────────────────────────────────
   useEffect(() => {
-    setPlayerName(localStorage.getItem(`giftmatch_player_${roomId}`))
+    const stored = localStorage.getItem(`giftmatch_player_${roomId}`)
+    console.log('[Game] init: localStorage key=', `giftmatch_player_${roomId}`, 'value=', stored)
+    if (stored) {
+      playerNameRef.current = stored
+      setPlayerName(stored)
+      setGamePhase('intro')
+    } else {
+      console.warn('[Game] playerName not found in localStorage — showing player select screen')
+      setGamePhase('select-player')
+    }
   }, [roomId])
+
+  function handleSelectPlayer(name: string) {
+    console.log('[Game] player selected manually:', name)
+    localStorage.setItem(`giftmatch_player_${roomId}`, name)
+    playerNameRef.current = name
+    setPlayerName(name)
+    setGamePhase('intro')
+  }
 
   // ── Keyboard ──────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -180,10 +200,12 @@ export function GameClient({ roomId }: { roomId: string }) {
 
     if (roundRef.current >= MAX_ROUNDS) {
       const best = Math.max(...updated)
-      console.log('[Game] endRound: playerName=', playerName, 'roomId=', roomId, 'best=', best)
-      if (!playerName) {
+      // playerNameRef を使うことで useCallback の stale closure を回避
+      const currentPlayerName = playerNameRef.current
+      console.log('[Game] endRound: playerName=', currentPlayerName, 'roomId=', roomId, 'best=', best)
+      if (!currentPlayerName) {
         console.error('[Game] playerName is null — score not saved!')
-        alert('[デバッグ] playerName が null のためスコアを保存できません。認証をやり直してください。')
+        alert('[デバッグ] playerName が null のためスコアを保存できません。ページを再読み込みして名前を選択してください。')
       } else {
         ;(async () => {
           try {
@@ -194,13 +216,13 @@ export function GameClient({ roomId }: { roomId: string }) {
               .from('players')
               .select('game_score')
               .eq('room_id', roomId)
-              .eq('name', playerName)
+              .eq('name', currentPlayerName)
               .single()
             console.log('[Game] fetched player:', player, 'fetchError:', fetchError)
 
             if (!player) {
-              console.error('[Game] player row not found in DB — roomId:', roomId, 'name:', playerName)
-              alert(`[デバッグ] DBにプレイヤーが見つかりません\nroomId: ${roomId}\nname: ${playerName}`)
+              console.error('[Game] player row not found in DB — roomId:', roomId, 'name:', currentPlayerName)
+              alert(`[デバッグ] DBにプレイヤーが見つかりません\nroomId: ${roomId}\nname: ${currentPlayerName}`)
               return
             }
 
@@ -211,7 +233,7 @@ export function GameClient({ roomId }: { roomId: string }) {
                 .from('players')
                 .update({ game_score: best })
                 .eq('room_id', roomId)
-                .eq('name', playerName)
+                .eq('name', currentPlayerName)
               if (updateError) {
                 console.error('[Game] game_score UPDATE failed:', updateError)
                 alert(`[デバッグ] スコア保存失敗:\ncode: ${updateError.code}\nmessage: ${updateError.message}\ndetails: ${updateError.details}`)
@@ -394,6 +416,37 @@ export function GameClient({ roomId }: { roomId: string }) {
   // ─────────────────────────────────────────────────────────────────────────
 
   const bestSoFar = roundScores.length > 0 ? Math.max(...roundScores) : 0
+
+  // ── Init (ローディング) ───────────────────────────────────────────────────
+  if (gamePhase === 'init') {
+    return (
+      <Screen>
+        <Label>LOADING...</Label>
+      </Screen>
+    )
+  }
+
+  // ── Player select (localStorageにnameがない場合のフォールバック) ────────────
+  if (gamePhase === 'select-player') {
+    return (
+      <Screen>
+        <Label>PHASE 05 — GIFT SORT</Label>
+        <h1 className="text-lg tracking-widest text-white mt-3 mb-2">あなたは誰ですか？</h1>
+        <p className="text-gray-600 text-xs mb-8 font-mono">認証情報が見つかりません。名前を選択してください。</p>
+        <div className="w-full max-w-xs flex flex-col gap-3">
+          {PLAYERS.map((name) => (
+            <button
+              key={name}
+              onClick={() => handleSelectPlayer(name)}
+              className="py-3 px-6 border border-gray-700 text-gray-300 text-sm font-mono tracking-widest hover:border-cyan-400 hover:text-cyan-400 transition-all duration-200 rounded"
+            >
+              {name}
+            </button>
+          ))}
+        </div>
+      </Screen>
+    )
+  }
 
   // ── Intro ─────────────────────────────────────────────────────────────────
   if (gamePhase === 'intro') {
